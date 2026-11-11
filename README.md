@@ -9,10 +9,12 @@ There are two versions:
 
 ## Using the web version
 
-1. Add `.inp` files by dropping them in, choosing files or a folder, or typing their names.
+1. Click **Open folder** (or drop the folder onto the page) and choose the folder with your `.inp` files. You can also choose single files or type names.
 2. Set the e-mail address and the Abaqus version. By default each job gets 16 cpus/ppn, the first 5 jobs go to `asm-medium` and the rest go to `asm-small`, as in the MATLAB script. You can switch to cpus per queue and change the queue for each job.
 3. Optional: turn on post-processing (`abaqus cae noGUI=<script>`) and attach the `.py` file to bundle it into the ZIP.
-4. Download each `.pbs` on its own, or all of them as `pbs_scripts.zip`, and unzip it next to the `.inp` files. You can add a `submit_all.sh` to the ZIP if you want it.
+4. Click **Save to folder**. The `.pbs` files are written next to the `.inp` files, just like the MATLAB script does, and you are asked before any existing `.pbs` is overwritten. The browser asks once for permission to edit the folder.
+   - Saving straight to a folder works in **Chrome and Edge** (desktop). In Firefox or Safari, the scripts are downloaded instead, either one at a time or as `pbs_scripts.zip`.
+   - You can also have a `submit_all.sh` written to the folder, if you want it.
 
 Settings are saved in your browser. Files are written with Unix (LF) line endings.
 
