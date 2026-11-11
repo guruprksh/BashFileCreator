@@ -198,6 +198,14 @@
   .drop strong { display: block; font-size: .92rem; }
   .drop span { font-size: .8rem; color: var(--muted); }
   .drop .inline { justify-content: center; margin-top: 12px; }
+  .folder-bar {
+    display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+    background: color-mix(in srgb, var(--ok) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+    color: var(--ok);
+  }
+  .folder-bar .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+  .folder-bar .txt span { font-size: .72rem; color: var(--muted); }
+  .folder-bar .txt b { color: var(--text); font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: .75rem; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; }
   .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
@@ -296,7 +304,7 @@
 
 <section class="hero">
   <h2>From <span class="mono" style="color:var(--accent)">.inp</span> to <span class="mono" style="color:var(--accent)">.pbs</span> in one click</h2>
-  <p>Add your Abaqus input files, set the queue and CPUs, then download a ready-to-submit PBS script for every job.</p>
+  <p>Add your Abaqus input files, set the queue and CPUs, then save a ready-to-submit PBS script for every job straight into the same folder.</p>
   <div class="pills">
     <span class="pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>Runs entirely in your browser</span>
     <span class="pill"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>Unix (LF) line endings</span>
@@ -314,15 +322,21 @@
           <div class="ico">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg>
           </div>
-          <strong>Drop .inp files or a folder</strong>
+          <strong>Drop a folder or .inp files</strong>
           <span>Only file names are read, nothing is uploaded</span>
           <div class="inline">
+            <button type="button" class="btn sm primary" id="pickFolder">Open folder</button>
             <button type="button" class="btn sm" id="pickFiles">Choose files</button>
-            <button type="button" class="btn sm" id="pickFolder">Choose folder</button>
           </div>
           <input type="file" id="fileInput" accept=".inp" multiple class="hidden">
           <input type="file" id="folderInput" webkitdirectory multiple class="hidden">
         </div>
+        <div class="folder-bar hidden" id="folderBar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+          <div class="txt"><span>Scripts will be saved in</span><b id="folderName"></b></div>
+          <button type="button" class="x" id="disconnectFolder" title="Stop saving to this folder" aria-label="Stop saving to this folder"></button>
+        </div>
+        <p class="hint hidden" id="fsHint">This browser can't write to folders, so scripts are downloaded instead. Use Chrome or Edge to save them next to your .inp files.</p>
         <div class="or">or type names</div>
         <textarea id="manual" rows="3" placeholder="Model_A.inp&#10;Model_B.inp"></textarea>
         <div class="inline" style="margin-top:10px">
@@ -424,9 +438,13 @@
       <div class="card-head">
         <h3>Jobs</h3>
         <span class="spacer"></span>
+        <button type="button" class="btn primary hidden" id="saveFolder" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l5 5v11a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M7 3v5h8"/><path d="M7 21v-7h10v7"/></svg>
+          Save to folder <span id="saveCount"></span>
+        </button>
         <button type="button" class="btn primary" id="downloadZip" disabled>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>
-          Download all <span id="zipCount"></span>
+          <span id="zipLabel">Download all</span> <span id="zipCount"></span>
         </button>
       </div>
       <div class="stats hidden" id="stats"></div>
@@ -484,7 +502,7 @@
     firstQueue: "asm-medium",
     restQueue: "asm-small",
     wantFO: false,
-    foScript: "animation.py",
+    foScript: "U1_animation_limits_v1r2.py",
     submitAll: false,
   };
   const STORE_KEY = "abaqus-pbs-generator-v2";
@@ -495,6 +513,8 @@
   let jobs = [];          // { inpName, jobName, queue: null | string }
   let selected = 0;
   let foFile = null;
+  let dirHandle = null;   // folder opened with the File System Access API (Chrome/Edge): .pbs files are written here
+  const FS_SUPPORTED = "showDirectoryPicker" in window;
 
   const $ = (id) => document.getElementById(id);
 
@@ -700,7 +720,7 @@
           <td class="name">${esc(j.inpName)}</td>
           <td style="white-space:nowrap"><select style="--qc:${queueColor(qn)}" data-jq="${i}" aria-label="Queue for ${esc(j.jobName)}">${queueOptions(qn, false)}</select>${j.queue ? "" : '<span class="auto-tag">auto</span>'}</td>
           <td class="cpu">${q.cpus}</td>
-          <td><button type="button" class="btn sm" data-dl="${i}" title="Download ${esc(j.jobName)}.pbs">${DL_ICON}.pbs</button></td>
+          <td><button type="button" class="btn sm" data-dl="${i}" title="${dirHandle ? "Save" : "Download"} ${esc(j.jobName)}.pbs">${DL_ICON}.pbs</button></td>
           <td><button type="button" class="x" data-del="${i}" title="Remove" aria-label="Remove">${X_ICON}</button></td>
         </tr>`;
     }).join("");
@@ -710,9 +730,11 @@
     $("jobWrap").classList.toggle("hidden", !has);
     $("stats").classList.toggle("hidden", !has);
     $("downloadZip").disabled = !has;
+    $("saveFolder").disabled = !has;
     $("copyPreview").disabled = !has;
     $("dlPreview").disabled = !has;
-    $("zipCount").textContent = has ? `(${jobs.length})` : "";
+    $("zipCount").textContent = has && !dirHandle ? `(${jobs.length})` : "";
+    $("saveCount").textContent = has ? `(${jobs.length})` : "";
 
     if (has) {
       const counts = {};
@@ -765,9 +787,87 @@
     toast(`Downloaded ${jobs.length} PBS script${jobs.length > 1 ? "s" : ""}`);
   }
 
+  // ---------------- save into the opened folder (Chrome/Edge) ----------------
+  function renderFolder() {
+    const on = !!dirHandle;
+    $("folderBar").classList.toggle("hidden", !on);
+    $("folderName").textContent = on ? dirHandle.name : "";
+    $("saveFolder").classList.toggle("hidden", !on);
+    $("downloadZip").classList.toggle("primary", !on);
+    $("zipLabel").textContent = on ? "ZIP" : "Download all";
+    $("dlPreview").textContent = on ? "Save" : "Download";
+  }
+
+  async function useFolder(handle) {
+    const names = [];
+    for await (const [name, entry] of handle.entries()) {
+      if (entry.kind === "file" && /\.inp$/i.test(name)) names.push(name);
+    }
+    dirHandle = handle;
+    jobs = [];            // one folder = one batch, like the MATLAB script
+    selected = 0;
+    renderFolder();
+    addNames(names);
+  }
+
+  async function openFolder() {
+    if (!FS_SUPPORTED) return $("folderInput").click();
+    try {
+      await useFolder(await window.showDirectoryPicker({ id: "inp-folder", mode: "readwrite" }));
+    } catch (e) {
+      if (e.name !== "AbortError") toast("Could not open folder: " + e.message);
+    }
+  }
+
+  async function canWrite() {
+    const opts = { mode: "readwrite" };
+    if ((await dirHandle.queryPermission(opts)) === "granted") return true;
+    return (await dirHandle.requestPermission(opts)) === "granted";
+  }
+  async function exists(name) {
+    try { await dirHandle.getFileHandle(name); return true; } catch (e) { return false; }
+  }
+  async function writeFile(name, content) {
+    const fh = await dirHandle.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(content);
+    await w.close();
+  }
+
+  async function saveToFolder(only) {
+    const idx = only === undefined ? jobs.map((_, i) => i) : [only];
+    try {
+      if (!(await canWrite())) return toast("Write permission was not granted");
+      const clash = [];
+      for (const i of idx) if (await exists(jobs[i].jobName + ".pbs")) clash.push(jobs[i].jobName + ".pbs");
+      if (clash.length && !confirm(`${clash.length} file(s) already exist in "${dirHandle.name}" and will be overwritten:\n\n` +
+          clash.slice(0, 8).join("\n") + (clash.length > 8 ? `\n...and ${clash.length - 8} more` : "") + "\n\nContinue?")) return;
+
+      for (const i of idx) await writeFile(jobs[i].jobName + ".pbs", buildPbs(i));
+      const extra = [];
+      if (only === undefined) {
+        if (settings.submitAll) { await writeFile("submit_all.sh", buildSubmitAll()); extra.push("submit_all.sh"); }
+        // copy the post-processing script once, and never overwrite it (same as the MATLAB script)
+        if (settings.wantFO && foFile) {
+          const name = settings.foScript || foFile.name;
+          if (await exists(name)) extra.push(`${name} already there, not copied`);
+          else { await writeFile(name, foFile); extra.push(name); }
+        }
+      }
+      toast(`Saved ${idx.length} PBS script${idx.length > 1 ? "s" : ""} to ${dirHandle.name}` +
+            (extra.length ? ` (+ ${extra.join(", ")})` : ""));
+    } catch (e) {
+      toast("Saving failed: " + e.message);
+    }
+  }
+
   // ---------------- events ----------------
   $("pickFiles").onclick = () => $("fileInput").click();
-  $("pickFolder").onclick = () => $("folderInput").click();
+  $("pickFolder").onclick = openFolder;
+  $("saveFolder").onclick = () => saveToFolder();
+  $("disconnectFolder").innerHTML = X_ICON;
+  $("disconnectFolder").onclick = () => { dirHandle = null; renderFolder(); render(); toast("Scripts will be downloaded instead"); };
+  if (!FS_SUPPORTED) $("fsHint").classList.remove("hidden");
   $("fileInput").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
   $("folderInput").onchange = (e) => {
     // only top-level files, like MATLAB dir(fullfile(inputDir,'*.inp'))
@@ -784,7 +884,13 @@
     drop.classList.remove("over");
     const names = [];
     const items = [...(e.dataTransfer.items || [])];
+    // items are only valid synchronously, so grab handles/entries before any await
+    const handleP = FS_SUPPORTED && items.length === 1 && items[0].getAsFileSystemHandle ? items[0].getAsFileSystemHandle() : null;
     const entries = items.map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (handleP) {
+      const h = await handleP.catch(() => null);
+      if (h && h.kind === "directory") return useFolder(h);   // dropped folder: save back into it
+    }
     if (entries.length) {
       for (const entry of entries) {
         if (entry.isFile) names.push(entry.name);
@@ -885,7 +991,7 @@
   $("jobTable").addEventListener("click", (e) => {
     const t = e.target;
     const dl = t.closest("button[data-dl]");
-    if (dl) return downloadOne(+dl.dataset.dl);
+    if (dl) return dirHandle ? saveToFolder(+dl.dataset.dl) : downloadOne(+dl.dataset.dl);
     const del = t.closest("button[data-del]");
     if (del) { jobs.splice(+del.dataset.del, 1); return render(); }
     if (t.closest("select")) return;
@@ -894,7 +1000,7 @@
   });
 
   $("downloadZip").onclick = downloadZip;
-  $("dlPreview").onclick = () => downloadOne(selected);
+  $("dlPreview").onclick = () => (dirHandle ? saveToFolder(selected) : downloadOne(selected));
   $("copyPreview").onclick = async () => {
     try {
       await navigator.clipboard.writeText(buildPbs(selected));
